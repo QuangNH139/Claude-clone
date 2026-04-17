@@ -4,10 +4,6 @@
     "ignore": ["firebase.json", "**/.*", "**/node_modules/**"],
     "rewrites": [
       {
-        "source": "/api/auth",
-        "function": { "functionId": "auth", "region": "asia-southeast1" }
-      },
-      {
         "source": "/api/chat",
         "function": { "functionId": "chat", "region": "asia-southeast1" }
       },

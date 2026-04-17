@@ -1,7 +1,9 @@
 import { useState, useRef, useEffect, useCallback } from 'react'
+import { signOut } from 'firebase/auth'
 import ReactMarkdown from 'react-markdown'
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter'
 import { oneDark } from 'react-syntax-highlighter/dist/esm/styles/prism'
+import { auth } from '../firebase'
 
 const MODELS = [
   { id: 'claude-opus-4-7', label: 'Claude Opus 4' },
@@ -64,7 +66,8 @@ function Message({ msg }) {
   )
 }
 
-export default function ChatPage({ token, onLogout }) {
+export default function ChatPage({ user }) {
+  const onLogout = () => signOut(auth)
   const [messages, setMessages] = useState([])
   const [input, setInput] = useState('')
   const [loading, setLoading] = useState(false)
@@ -133,11 +136,14 @@ export default function ChatPage({ token, onLogout }) {
       abortRef.current = controller
 
       try {
+        // Lấy Firebase ID token mới nhất (tự động refresh khi hết hạn)
+        const idToken = await user.getIdToken()
+
         const res = await fetch('/api/chat', {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
-            Authorization: `Bearer ${token}`,
+            Authorization: `Bearer ${idToken}`,
           },
           body: JSON.stringify({
             messages: newMessages,
@@ -148,7 +154,7 @@ export default function ChatPage({ token, onLogout }) {
         })
 
         if (res.status === 401) {
-          onLogout()
+          await signOut(auth)
           return
         }
 
@@ -213,7 +219,7 @@ export default function ChatPage({ token, onLogout }) {
         abortRef.current = null
       }
     },
-    [messages, loading, model, token, onLogout]
+    [messages, loading, model, user, onLogout]
   )
 
   const handleKeyDown = (e) => {
@@ -277,6 +283,15 @@ export default function ChatPage({ token, onLogout }) {
                     </option>
                   ))}
                 </select>
+              </div>
+
+              <div className="user-info">
+                {user.photoURL && (
+                  <img src={user.photoURL} alt="avatar" className="user-avatar" />
+                )}
+                <span className="user-email" title={user.email}>
+                  {user.displayName || user.email}
+                </span>
               </div>
 
               <button className="logout-btn" onClick={onLogout}>

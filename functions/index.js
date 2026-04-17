@@ -1,10 +1,13 @@
 import { onRequest } from 'firebase-functions/v2/https'
 import { setGlobalOptions } from 'firebase-functions/v2'
+import admin from 'firebase-admin'
 import Anthropic from '@anthropic-ai/sdk'
-import jwt from 'jsonwebtoken'
 
 // Đặt region gần Việt Nam nhất
 setGlobalOptions({ region: 'asia-southeast1' })
+
+// Firebase Admin tự khởi tạo credentials khi chạy trên Cloud Functions
+if (!admin.apps.length) admin.initializeApp()
 
 function setCors(res) {
   res.set('Access-Control-Allow-Origin', '*')
@@ -12,29 +15,12 @@ function setCors(res) {
   res.set('Access-Control-Allow-Headers', 'Content-Type, Authorization')
 }
 
-// ─── POST /api/auth ────────────────────────────────────────────
-export const auth = onRequest(async (req, res) => {
-  setCors(res)
-  if (req.method === 'OPTIONS') return res.status(200).end()
-  if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' })
-
-  const { username, password } = req.body
-  if (!username || !password) {
-    return res.status(400).json({ error: 'Username and password required' })
-  }
-
-  const { ADMIN_USERNAME, ADMIN_PASSWORD, JWT_SECRET } = process.env
-  if (!ADMIN_USERNAME || !ADMIN_PASSWORD || !JWT_SECRET) {
-    return res.status(500).json({ error: 'Server not configured – set env vars on Firebase' })
-  }
-
-  if (username !== ADMIN_USERNAME || password !== ADMIN_PASSWORD) {
-    return res.status(401).json({ error: 'Tên đăng nhập hoặc mật khẩu không đúng' })
-  }
-
-  const token = jwt.sign({ username }, JWT_SECRET, { expiresIn: '7d' })
-  return res.status(200).json({ token })
-})
+async function verifyFirebaseToken(req) {
+  const header = req.headers.authorization
+  if (!header?.startsWith('Bearer ')) throw new Error('No token')
+  const idToken = header.split('Bearer ')[1]
+  return admin.auth().verifyIdToken(idToken) // throws nếu token không hợp lệ
+}
 
 // ─── POST /api/chat ────────────────────────────────────────────
 export const chat = onRequest({ timeoutSeconds: 300 }, async (req, res) => {
@@ -42,15 +28,11 @@ export const chat = onRequest({ timeoutSeconds: 300 }, async (req, res) => {
   if (req.method === 'OPTIONS') return res.status(200).end()
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' })
 
-  // Xác thực JWT
-  const authHeader = req.headers.authorization
-  if (!authHeader?.startsWith('Bearer ')) {
-    return res.status(401).json({ error: 'Unauthorized' })
-  }
+  // Xác thực Firebase ID token
   try {
-    jwt.verify(authHeader.split(' ')[1], process.env.JWT_SECRET)
+    await verifyFirebaseToken(req)
   } catch {
-    return res.status(401).json({ error: 'Unauthorized – please login again' })
+    return res.status(401).json({ error: 'Unauthorized – vui lòng đăng nhập lại' })
   }
 
   const { messages, model = 'claude-sonnet-4-6', system } = req.body

@@ -1,20 +1,25 @@
 import { useState, useEffect } from 'react'
+import { onAuthStateChanged } from 'firebase/auth'
+import { auth } from './firebase'
 import LoginPage from './components/LoginPage'
 import ChatPage from './components/ChatPage'
 
 export default function App() {
-  const [token, setToken] = useState(() => localStorage.getItem('claude_token'))
+  // undefined = đang kiểm tra trạng thái, null = chưa đăng nhập, object = đã đăng nhập
+  const [user, setUser] = useState(undefined)
 
   useEffect(() => {
-    if (token) localStorage.setItem('claude_token', token)
-    else localStorage.removeItem('claude_token')
-  }, [token])
+    const unsub = onAuthStateChanged(auth, setUser)
+    return unsub
+  }, [])
 
-  const handleLogout = () => setToken(null)
+  if (user === undefined) {
+    return (
+      <div className="loading-screen">
+        <div className="loading-spinner" />
+      </div>
+    )
+  }
 
-  return token ? (
-    <ChatPage token={token} onLogout={handleLogout} />
-  ) : (
-    <LoginPage onLogin={setToken} />
-  )
+  return user ? <ChatPage user={user} /> : <LoginPage />
 }
