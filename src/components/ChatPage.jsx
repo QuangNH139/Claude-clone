@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect, useCallback } from 'react'
 import { signOut } from 'firebase/auth'
 import { auth } from '../firebase'
+import { streamClaude } from '../api/claude'
 import { useConversations } from '../hooks/useConversations'
 import { loadTheme, saveTheme, loadModel, saveModel } from '../utils/storage'
 import Sidebar from './Sidebar'
@@ -78,71 +79,36 @@ export default function ChatPage({ user }) {
   const toggleTheme = () => setTheme(t => t === 'light' ? 'dark' : 'light')
 
   // ── Core streaming function ─────────────────────────────────
-  // Appends a streaming assistant message to convId and fills it via SSE.
   const doStream = useCallback(async (convId, apiMessages) => {
     const msgId = crypto.randomUUID()
+    const controller = new AbortController()
+    abortRef.current = controller
 
     updateMessages(convId, prev => [
       ...prev,
       { id: msgId, role: 'assistant', content: '', streaming: true, createdAt: Date.now() },
     ])
 
-    const controller = new AbortController()
-    abortRef.current = controller
-
-    try {
-      const idToken = await user.getIdToken()
-      const res = await fetch('/api/chat', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${idToken}` },
-        body: JSON.stringify({ messages: apiMessages, model, system: SYSTEM_PROMPT }),
-        signal: controller.signal,
-      })
-
-      if (res.status === 401) { await logout(); return }
-      if (!res.ok) throw new Error(`HTTP ${res.status}`)
-
-      const reader  = res.body.getReader()
-      const decoder = new TextDecoder()
-      let buffer    = ''
-
-      while (true) {
-        const { done, value } = await reader.read()
-        if (done) break
-
-        buffer += decoder.decode(value, { stream: true })
-        const lines = buffer.split('\n')
-        buffer = lines.pop()
-
-        for (const line of lines) {
-          if (!line.startsWith('data: ')) continue
-          try {
-            const event = JSON.parse(line.slice(6))
-            if (event.type === 'text') {
-              updateMessages(convId, prev =>
-                prev.map(m => m.id === msgId ? { ...m, content: m.content + event.text } : m)
-              )
-            } else if (event.type === 'done') {
-              updateMessages(convId, prev =>
-                prev.map(m => m.id === msgId ? { ...m, streaming: false } : m)
-              )
-            } else if (event.type === 'error') {
-              setError(event.message)
-              updateMessages(convId, prev => prev.filter(m => m.id !== msgId))
-            }
-          } catch { /* skip malformed SSE line */ }
-        }
-      }
-    } catch (err) {
-      if (err.name !== 'AbortError') setError('Lỗi kết nối. Vui lòng thử lại.')
-      updateMessages(convId, prev =>
+    await streamClaude({
+      messages: apiMessages,
+      model,
+      system:   SYSTEM_PROMPT,
+      signal:   controller.signal,
+      onText:   (text) => updateMessages(convId, prev =>
+        prev.map(m => m.id === msgId ? { ...m, content: m.content + text } : m)
+      ),
+      onDone:   () => updateMessages(convId, prev =>
         prev.map(m => m.id === msgId ? { ...m, streaming: false } : m)
-      )
-    } finally {
-      setLoading(false)
-      abortRef.current = null
-    }
-  }, [user, model, updateMessages])
+      ),
+      onError:  (message) => {
+        setError(message)
+        updateMessages(convId, prev => prev.filter(m => m.id !== msgId))
+      },
+    })
+
+    setLoading(false)
+    abortRef.current = null
+  }, [model, updateMessages])
 
   // ── Send new message ────────────────────────────────────────
   const sendMessage = useCallback(async (text) => {

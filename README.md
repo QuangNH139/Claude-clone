@@ -1,126 +1,103 @@
 # Claude Chat Web App
 
-Web chat với Claude AI – đăng nhập qua **Firebase Authentication** (Email/Password + Google). API key không bao giờ lộ ra browser.
+Web chat với Claude AI. Đăng nhập qua **Firebase Authentication**, deploy trên **Firebase Hosting** (static only – không cần Cloud Functions).
 
-## Kiến trúc bảo mật
+## Kiến trúc
 
 ```
-Browser ──── Firebase Auth ────► Firebase (Google quản lý)
-                                        │
-                                        │ ID Token (1h, tự refresh)
-                                        ▼
-Browser ──── POST /api/chat ──►  Cloud Function
-                                        │
-                                        │ verify ID Token (firebase-admin)
-                                        │ gọi Claude API
-                                        ▼
-                               ANTHROPIC_API_KEY (chỉ trên server)
+Browser ── Firebase Auth ──► Google (quản lý đăng nhập)
+    │
+    │  (chỉ user đã đăng nhập mới vào được)
+    │
+    └── Claude API ──────────► api.anthropic.com (gọi trực tiếp từ browser)
 ```
+
+- `VITE_ANTHROPIC_API_KEY` được nhúng vào bundle lúc build – **chỉ phù hợp cho app cá nhân/nhóm nhỏ**.
+- Firebase Auth đảm bảo chỉ người được cấp tài khoản mới dùng được.
+
+## Tính năng
+
+- Đăng nhập Email/Password + Google Sign-In
+- Nhiều hội thoại – lưu localStorage, phân nhóm theo ngày
+- Tìm kiếm, đổi tên, xóa hội thoại
+- Chỉnh sửa tin nhắn user, tạo lại câu trả lời
+- Sao chép tin nhắn, timestamp khi hover
+- Streaming response (từng chữ như Claude.ai)
+- Markdown + syntax highlighting
+- Dark / Light mode (lưu preference)
+- Chọn model (Opus 4 / Sonnet 4 / Haiku 4)
 
 ---
 
-## 🔥 Deploy lên Firebase (tự động qua GitHub Actions)
+## 🔥 Deploy lên Firebase Hosting
 
 ### Bước 1 – Tạo Firebase project
 
-1. Vào [console.firebase.google.com](https://console.firebase.google.com) → Tạo project
-2. Bật **Hosting** và **Functions** (yêu cầu **Blaze plan**)
-3. Bật **Authentication** → Sign-in method → bật **Email/Password** và/hoặc **Google**
+1. [console.firebase.google.com](https://console.firebase.google.com) → Tạo project
+2. Bật **Hosting** (không cần Functions hay Blaze plan)
+3. Bật **Authentication** → Email/Password và/hoặc Google
 4. Thêm user: **Authentication → Users → Add user**
 
-### Bước 2 – Tạo Service Account cho GitHub Actions
-
-1. Firebase Console → Project Settings → **Service accounts**
-2. Click **Generate new private key** → tải file JSON
-3. Giữ file này bí mật (không commit)
-
-### Bước 3 – Cấu hình GitHub Secrets & Variables
-
-Vào **GitHub repo → Settings → Secrets and variables → Actions**
-
-#### Secrets (bí mật):
-| Tên | Giá trị |
-|-----|---------|
-| `ANTHROPIC_API_KEY` | `sk-ant-...` |
-| `FIREBASE_SERVICE_ACCOUNT` | Toàn bộ nội dung file JSON service account |
-
-#### Variables (công khai – lấy từ Firebase Console → Project Settings → Your apps):
-| Tên | Giá trị |
-|-----|---------|
-| `FIREBASE_PROJECT_ID` | `your-project-id` |
-| `VITE_FIREBASE_API_KEY` | `AIzaSy...` |
-| `VITE_FIREBASE_AUTH_DOMAIN` | `your-project.firebaseapp.com` |
-| `VITE_FIREBASE_PROJECT_ID` | `your-project-id` |
-| `VITE_FIREBASE_STORAGE_BUCKET` | `your-project.appspot.com` |
-| `VITE_FIREBASE_MESSAGING_SENDER_ID` | `123456789` |
-| `VITE_FIREBASE_APP_ID` | `1:123:web:abc` |
-
-### Bước 4 – Cập nhật .firebaserc
-
-Sửa file `.firebaserc`:
-```json
-{ "projects": { "default": "your-project-id" } }
-```
-
-### Bước 5 – Push lên main → tự động deploy
+### Bước 2 – Cài Firebase CLI
 
 ```bash
-git push origin main
+npm install -g firebase-tools
+firebase login
+firebase use --add   # chọn project, tạo .firebaserc
 ```
 
-GitHub Actions sẽ tự động:
-1. Cài dependencies
-2. Inject `ANTHROPIC_API_KEY` vào `functions/.env`
-3. Build React (với Firebase config từ vars)
-4. Deploy Hosting + Functions lên Firebase
+### Bước 3 – Build và deploy thủ công (lần đầu)
+
+Tạo `.env.local`:
+```
+VITE_FIREBASE_API_KEY=...
+VITE_FIREBASE_AUTH_DOMAIN=your-project.firebaseapp.com
+VITE_FIREBASE_PROJECT_ID=your-project-id
+VITE_FIREBASE_STORAGE_BUCKET=your-project.appspot.com
+VITE_FIREBASE_MESSAGING_SENDER_ID=...
+VITE_FIREBASE_APP_ID=...
+VITE_ANTHROPIC_API_KEY=sk-ant-...
+```
+
+```bash
+npm install
+npm run build
+firebase deploy --only hosting
+```
+
+URL sẽ là: `https://your-project.web.app`
+
+---
+
+## ⚡ Tự động deploy với GitHub Actions
+
+Mỗi khi push lên `main` → tự build và deploy.
+
+### Thiết lập GitHub Secrets & Variables
+
+**Settings → Secrets and variables → Actions**
+
+| Loại | Tên | Lấy ở đâu |
+|------|-----|-----------|
+| **Secret** | `VITE_ANTHROPIC_API_KEY` | console.anthropic.com |
+| **Secret** | `FIREBASE_SERVICE_ACCOUNT` | Firebase Console → Project Settings → Service accounts → Generate key (JSON) |
+| **Variable** | `FIREBASE_PROJECT_ID` | Firebase Console → Project settings |
+| **Variable** | `VITE_FIREBASE_API_KEY` | Firebase Console → Your apps → Web |
+| **Variable** | `VITE_FIREBASE_AUTH_DOMAIN` | ↑ |
+| **Variable** | `VITE_FIREBASE_PROJECT_ID` | ↑ |
+| **Variable** | `VITE_FIREBASE_STORAGE_BUCKET` | ↑ |
+| **Variable** | `VITE_FIREBASE_MESSAGING_SENDER_ID` | ↑ |
+| **Variable** | `VITE_FIREBASE_APP_ID` | ↑ |
+
+Push lên `main` → GitHub Actions tự build + deploy.
 
 ---
 
 ## 💻 Chạy local
 
-Tạo `.env.local` (cho Vite):
-```
-VITE_FIREBASE_API_KEY=AIzaSy...
-VITE_FIREBASE_AUTH_DOMAIN=your-project.firebaseapp.com
-VITE_FIREBASE_PROJECT_ID=your-project-id
-VITE_FIREBASE_STORAGE_BUCKET=your-project.appspot.com
-VITE_FIREBASE_MESSAGING_SENDER_ID=123456789
-VITE_FIREBASE_APP_ID=1:123:web:abc
-```
-
-Tạo `functions/.env` (cho Cloud Functions emulator):
-```
-ANTHROPIC_API_KEY=sk-ant-...
-```
-
-Chạy Firebase emulator + Vite:
 ```bash
-# Terminal 1
-npm install && cd functions && npm install && cd ..
-firebase emulators:start --only functions,hosting
-
-# Terminal 2
+cp .env.example .env.local
+# Điền giá trị vào .env.local
+npm install
 npm run dev
-```
-
----
-
-## Cấu trúc project
-
-```
-├── .github/workflows/
-│   └── deploy.yml        # GitHub Actions – tự động deploy khi push main
-├── api/
-│   └── chat.js           # Vercel serverless (dùng Firebase token)
-├── functions/
-│   ├── index.js          # Firebase Cloud Functions (auth + chat)
-│   └── package.json
-├── src/
-│   ├── firebase.js       # Firebase SDK init
-│   ├── App.jsx           # Firebase Auth state observer
-│   └── components/
-│       ├── LoginPage.jsx # Email/Password + Google Sign-In
-│       └── ChatPage.jsx  # SSE streaming chat
-├── firebase.json         # Firebase Hosting + Functions config
-└── vercel.json           # Vercel config (thay thế)
 ```
