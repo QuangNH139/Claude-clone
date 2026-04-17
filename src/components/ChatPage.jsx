@@ -1,8 +1,8 @@
 import { useState, useRef, useEffect, useCallback } from 'react'
 import { signOut } from 'firebase/auth'
-import ReactMarkdown from 'react-markdown'
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter'
 import { oneDark } from 'react-syntax-highlighter/dist/esm/styles/prism'
+import ReactMarkdown from 'react-markdown'
 import { auth } from '../firebase'
 
 const MODELS = [
@@ -66,8 +66,9 @@ function Message({ msg }) {
   )
 }
 
+const logout = () => signOut(auth)
+
 export default function ChatPage({ user }) {
-  const onLogout = () => signOut(auth)
   const [messages, setMessages] = useState([])
   const [input, setInput] = useState('')
   const [loading, setLoading] = useState(false)
@@ -154,7 +155,7 @@ export default function ChatPage({ user }) {
         })
 
         if (res.status === 401) {
-          await signOut(auth)
+          await logout()
           return
         }
 
@@ -219,7 +220,7 @@ export default function ChatPage({ user }) {
         abortRef.current = null
       }
     },
-    [messages, loading, model, user, onLogout]
+    [messages, loading, model, user]
   )
 
   const handleKeyDown = (e) => {
@@ -294,7 +295,7 @@ export default function ChatPage({ user }) {
                 </span>
               </div>
 
-              <button className="logout-btn" onClick={onLogout}>
+              <button className="logout-btn" onClick={logout}>
                 ⎋ Đăng xuất
               </button>
             </div>
